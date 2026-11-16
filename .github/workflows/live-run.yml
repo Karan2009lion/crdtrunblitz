@@ -1,0 +1,89 @@
+name: Live paper bot
+
+# Runs the BTC paper bot on GitHub's servers until it is stopped, and publishes STATUS.md (with a
+# screenshot) on the live-run branch every minute. Each run lasts about 5 h 40 min, saves the bot's
+# state, and starts the next run, which carries on with the same account.
+#   Stop:  create a branch named stop-live-run (to start again, delete it on GitHub).
+#   Start: delete that branch, then run this workflow (Actions tab → Live paper bot → Run workflow).
+#          Tick "Start a new test" to erase the saved account and start with the amount and timeframe given.
+on:
+  workflow_dispatch:
+    inputs:
+      fresh:
+        description: Start a new test (erases the saved account)
+        type: boolean
+        default: false
+      amount:
+        description: Starting paper money in dollars (new test only)
+        default: '10000'
+      timeframe:
+        description: How often the bot decides, 1m, 15m, 1h or 4h (new test only)
+        default: '4h'
+      min_trade:
+        description: Least to spend on one trade in dollars, blank for none (new test only)
+        default: ''
+      max_trade:
+        description: Most to spend on one trade in dollars, blank for none (new test only)
+        default: ''
+  # To have it restart itself within the hour if a handover is ever missed, add back:
+  #   schedule:
+  #     - cron: '23 * * * *'
+  # (each hourly check uses at least a minute of GitHub Actions time, even while stopped).
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: live-run
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - name: Stopped?
+        id: gate
+        run: |
+          if git ls-remote --exit-code --heads "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" stop-live-run >/dev/null 2>&1; then
+            echo "stopped=1" >> "$GITHUB_OUTPUT"
+            echo "The bot is stopped (the stop-live-run branch exists)."
+          fi
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.stopped != '1'
+      - uses: actions/setup-node@v4
+        if: steps.gate.outputs.stopped != '1'
+        with:
+          node-version: 22
+          cache: npm
+      - name: Build the app
+        if: steps.gate.outputs.stopped != '1'
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+          npm i --no-save --no-audit --no-fund playwright@1.63.0
+          npx playwright install --with-deps chromium
+      - name: Serve the app
+        if: steps.gate.outputs.stopped != '1'
+        run: |
+          nohup node server/index.mjs > server.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf http://localhost:4173 >/dev/null && exit 0; sleep 1; done
+          cat server.log; exit 1
+      - name: Run the bot
+        if: steps.gate.outputs.stopped != '1'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MINUTES: '340'
+          FRESH: ${{ inputs.fresh }}
+          AMOUNT: ${{ inputs.amount }}
+          TIMEFRAME: ${{ inputs.timeframe }}
+          MIN_TRADE: ${{ inputs.min_trade }}
+          MAX_TRADE: ${{ inputs.max_trade }}
+        run: node scripts/live-run.cjs
+      - name: Start the next run
+        # Not when the run was cancelled: cancelling must not start another run.
+        if: ${{ !cancelled() && steps.gate.outputs.stopped != '1' && hashFiles('live-run-stopped') == '' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run live-run.yml --ref "${{ github.ref_name }}" --repo "${{ github.repository }}"
