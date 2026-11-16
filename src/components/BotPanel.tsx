@@ -86,7 +86,7 @@ function Blitz({ now }: { now: number }) {
         <span className="hint">{BLITZ_MINUTES / 60} hours of quick trades, once a day</span>
       </div>
       <span className="hint">
-        Buys or sells short whenever the 1-minute chart leans one way, about every 20 minutes, and gets out within 15 minutes. Every trade pays fees, so almost every session loses a little.
+        Buys or sells short whenever the 1-minute chart leans one way and holds while it keeps going, behind a stop that trails 0.5% behind the best price. About 1 session in 5 ends up; on average fees make it lose a little.
       </span>
       <button
         className="btn btn-sm blitz-go"

@@ -209,7 +209,7 @@ export function startBlitz(closeOpen = false): string | null {
   waitingFor = 0;
   get().log(
     'info',
-    `Blitz started: quick trades on the 1-minute chart until ${clock(now + BLITZ_MINUTES * 60_000, false)}. Buys or sells short whenever the 1-minute chart leans one way (score ±30), with a stop 0.3% away and a target 0.45% away, held at most 15 minutes. It stops early if the session loses ${BLITZ_STOP_PCT}% (${money((accountValue(px) * BLITZ_STOP_PCT) / 100)}). Every trade pays fees, so expect small losses.`,
+    `Blitz started: quick trades on the 1-minute chart until ${clock(now + BLITZ_MINUTES * 60_000, false)}. Buys or sells short whenever the 1-minute chart leans one way (score ±30) and holds while it keeps going, behind a stop that trails 0.5% behind the best price.${s.controls.blitzMaxSpend ? ` ${s.controls.blitzMinSpend ? `${money(s.controls.blitzMinSpend / s.account.rate)}–` : 'Up to '}${money(s.controls.blitzMaxSpend / s.account.rate)} a trade.` : ''} It stops early if the session loses ${BLITZ_STOP_PCT}% (${money((accountValue(px) * BLITZ_STOP_PCT) / 100)}). Every trade pays fees, so expect small losses.`,
   );
   get().toast('info', 'Blitz started: 2 hours of quick trades');
   return null;

@@ -123,7 +123,7 @@ function statusPage(s, ui, now, stoppedNote) {
     `| Just holding BTC instead | ${pct(hold)} |`,
     `| Cash | ${usd(s.cash)} |`,
     s.blitz
-      ? `| Blitz | **On until ${ist(s.blitz.endsAt)}** · quick trades on the 1-minute chart · ${usd(eq - s.blitz.startEquity, true)} this session (stops early at −2%) |`
+      ? `| Blitz | **On until ${ist(s.blitz.endsAt)}** · quick trades on the 1-minute chart${s.controls?.blitzMaxSpend ? `, ${s.controls.blitzMinSpend ? `${usd(s.controls.blitzMinSpend)}–` : 'up to '}${usd(s.controls.blitzMaxSpend)} a trade` : ''} · ${usd(eq - s.blitz.startEquity, true)} this session (stops early at −2%) |`
       : `| Blitz | ${s.blitzUsedOn && new Date(now).setHours(0, 0, 0, 0) <= s.blitzUsedOn ? 'Used today' : 'Not used today'} · to start it, ask Claude or create a branch named \`${blitzBranch(now)}\` |`,
     `| Open trade | ${pos ? `${pos.blitz ? 'Blitz: ' : ''}${pos.side === 'short' ? 'Sold short' : 'Bought'} ${pos.qty.toFixed(5)} BTC at ${usd(pos.entryPrice)}${pos.stopLoss ? `, stop ${usd(pos.stopLoss)}` : ''}${pos.takeProfit ? `, target ${usd(pos.takeProfit)}` : ''} · now ${usd(posValue - pos.collateral - pos.entryFee, true)}` : `None: waiting for ${CANDLE[tf] ?? tf} momentum to turn`} |`,
     `| Trades | ${trades.length} (${wins} won) · fees paid ${usd(fees)} |`,
@@ -167,7 +167,14 @@ function statusPage(s, ui, now, stoppedNote) {
   const timeframe = ['1m', '15m', '1h', '4h'].includes(process.env.TIMEFRAME) ? process.env.TIMEFRAME : '4h';
   const account = { currency: 'USD', rate: 1, ...(amount !== 10000 ? { amount } : {}) };
   const dollars = (v) => (Number(v) > 0 ? Number(v) : null);
-  const controls = { timeframe, minSpend: dollars(process.env.MIN_TRADE), maxSpend: dollars(process.env.MAX_TRADE) };
+  const controls = {
+    timeframe,
+    minSpend: dollars(process.env.MIN_TRADE),
+    maxSpend: dollars(process.env.MAX_TRADE),
+    // BLITZ_TRADE is "20-30" (least to most) or "30" (most only).
+    blitzMinSpend: String(process.env.BLITZ_TRADE || '').includes('-') ? dollars(String(process.env.BLITZ_TRADE).split('-')[0]) : null,
+    blitzMaxSpend: dollars(String(process.env.BLITZ_TRADE || '').split('-').pop()),
+  };
   const seed = JSON.stringify({ state: { theme: 'dark', mode: 'tested', interval: timeframe, view: 'live', chartView: 'bot', tradingMode: 'paper', account, cash: amount, controls }, version: 1 });
   const browser = await chromium.launch();
   const ctx = await browser.newContext({ viewport: { width: 1440, height: 900 }, colorScheme: 'dark', timezoneId: 'Asia/Kolkata' });

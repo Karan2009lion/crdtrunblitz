@@ -136,20 +136,28 @@ Deciding more often did not make more money: 4 hours was the only one ahead in b
 ### Blitz: 2 hours of quick trades, once a day
 
 **Start Blitz** on the main screen trades the 1-minute chart quickly for up to 2 hours: it buys or
-sells short whenever the chart leans one way (score ±30), with a stop 0.3% and a target 0.45% away,
-holding each trade at most 15 minutes, about one trade every 20 minutes. Your amounts per trade
-apply. Limits, so it can't run away with the account:
+sells short whenever the chart leans one way (score ±30), and instead of selling at a fixed target
+it holds while the move keeps going, behind a stop that trails 0.5% behind the best price (above it
+for a short). Blitz can have its own amount per trade (Profile → *Blitz amount per trade*, e.g.
+$20–$30), separate from normal trades. Limits, so it can't run away with the account:
 
 - at most 2 hours, then it closes its trade and goes back to your normal settings;
 - once a day (from midnight on your computer's clock);
 - it stops early if the session has lost 2% of the balance;
 - paper trading only. An open normal trade is closed first if you start Blitz.
 
-No quick-trade rule beat the fees in testing (`scripts/blitz-research.ts`: 8 chart strategies ×
-4 quick exits; `scripts/blitz-speed-research.ts`): before fees they roughly break even, and each
-round trip pays about 0.24%. With 0.25% of the balance at risk a trade, a session averaged about
-−0.6% and almost none ended up; the faster the setting, the bigger the loss (10 trades a session:
-about −1.4%). With small trades, such as $10 on $150, a session costs about 10–15 cents.
+No quick-trade rule beat the fees in testing: before fees they roughly break even, and each round
+trip pays about 0.24% of the amount traded (bigger trades pay proportionally more). Letting winners
+run behind a trailing stop lost about a quarter as much as selling at a fixed target
+(`scripts/blitz-hold-research.ts`, $30 trades on $150, one 2-hour session a day):
+
+| Blitz exits | Average session | Sessions that ended up | Best session | Trades |
+|---|---|---|---|---|
+| Sell at +0.45% or after 15 minutes | −$0.41 | 1% | +$0.28 | 5.6 |
+| **Trailing stop 0.5% (now)** | **−$0.12** | **20%** | **+$0.99** | **2** |
+
+Earlier Blitz research: `scripts/blitz-research.ts` (8 chart strategies × 4 quick exits) and
+`scripts/blitz-speed-research.ts` (the faster the setting, the bigger the loss).
 
 ### Neural network
 

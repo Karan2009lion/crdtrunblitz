@@ -166,6 +166,9 @@ interface Form {
   spend: string;
   minOn: boolean;
   min: string;
+  blitzOn: boolean;
+  blitzMin: string;
+  blitzMax: string;
   dailyOn: boolean;
   daily: string;
   hoursOn: boolean;
@@ -186,6 +189,9 @@ const toForm = (c: Controls): Form => ({
   spend: c.maxSpend?.toString() ?? '',
   minOn: c.minSpend !== null,
   min: c.minSpend?.toString() ?? '',
+  blitzOn: c.blitzMaxSpend !== null || c.blitzMinSpend !== null,
+  blitzMin: c.blitzMinSpend?.toString() ?? '20',
+  blitzMax: c.blitzMaxSpend?.toString() ?? '30',
   dailyOn: c.dailyTrades !== null,
   daily: String(c.dailyTrades ?? 15),
   hoursOn: c.hours !== null,
@@ -205,6 +211,8 @@ const toControls = (f: Form, base: Controls): Controls => ({
   riskPct: f.risk.trim() === '' ? NaN : Number(f.risk),
   maxSpend: num(f.spendOn, f.spend),
   minSpend: num(f.minOn, f.min),
+  blitzMinSpend: f.blitzOn && f.blitzMin.trim() !== '' ? Number(f.blitzMin) : null,
+  blitzMaxSpend: f.blitzOn && f.blitzMax.trim() !== '' ? Number(f.blitzMax) : null,
   dailyTrades: num(f.dailyOn, f.daily),
   hours: f.hoursOn ? { from: Number(f.from), to: Number(f.to) } : null,
   closeAfterHours: f.closeAfterHours,
@@ -304,6 +312,37 @@ function BotSettings() {
         placeholder="5"
         hint="Optional. A trade the loss limit would make smaller is raised to this, so its loss at the stop can then be a little more."
       />
+      <div className="choice">
+        <span className="field-label" id="blitz-amount-label">
+          Blitz amount per trade
+        </span>
+        <div className="choice-row">
+          <div className="segmented" role="radiogroup" aria-labelledby="blitz-amount-label">
+            <button type="button" role="radio" aria-checked={!form.blitzOn} aria-pressed={!form.blitzOn} onClick={() => up({ blitzOn: false })}>
+              Same as above
+            </button>
+            <button type="button" role="radio" aria-checked={form.blitzOn} aria-pressed={form.blitzOn} onClick={() => up({ blitzOn: true })}>
+              Its own
+            </button>
+          </div>
+          {form.blitzOn && (
+            <div className="hours-pick">
+              <div className="input-wrap choice-input">
+                <span className="affix">{cur}</span>
+                <input id="blitz-min" aria-label="Least per Blitz trade" type="number" inputMode="decimal" min="0" step="any" value={form.blitzMin} onChange={(e) => up({ blitzMin: e.target.value })} />
+              </div>
+              <span className="muted">to</span>
+              <div className="input-wrap choice-input">
+                <span className="affix">{cur}</span>
+                <input id="blitz-max" aria-label="Most per Blitz trade" type="number" inputMode="decimal" min="0" step="any" value={form.blitzMax} onChange={(e) => up({ blitzMax: e.target.value })} />
+              </div>
+            </div>
+          )}
+        </div>
+        <span className="hint">
+          Bigger Blitz trades make wins and losses bigger. Fees are a share of each trade (0.1% each way), so they grow with it rather than shrink.
+        </span>
+      </div>
       <Choice
         label="Trades a day"
         offLabel="No limit"

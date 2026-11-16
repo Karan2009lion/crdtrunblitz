@@ -165,3 +165,28 @@ describe('$150 with $5–$10 a trade', () => {
     expect(poor.kind).toBe('blocked');
   });
 });
+
+describe('Blitz', () => {
+  it('uses its own amounts, a trailing stop and no fixed target', async () => {
+    const { decide } = await import('../engine/rules');
+    const { blitzSettings, settingsFor, DEFAULT_CONTROLS, checkControls } = await import('../store/useStore');
+    const usd = { currency: 'USD' as const, rate: 1, amount: 150 };
+    const c = { ...DEFAULT_CONTROLS, timeframe: '1m' as const, minSpend: 5, maxSpend: 10, blitzMinSpend: 20, blitzMaxSpend: 30 };
+    expect(checkControls(c, 'paper')).toBeNull();
+    expect(checkControls({ ...c, blitzMinSpend: 40 }, 'paper')).not.toBeNull();
+    const st = blitzSettings(usd, c);
+    expect(st.trailingStop).toBe(true);
+    expect(st.minConfidence).toBe(30);
+    const d = decide({ signal: { score: 35, ready: true, reasons: ['x'], atrPct: 0.05 }, settings: st, cash: 150, equity: 150, botInvested: 0, recentEntries: 0, msSinceExit: Infinity });
+    expect(d.kind).toBe('enter');
+    if (d.kind === 'enter') {
+      expect(d.amount).toBeGreaterThanOrEqual(20);
+      expect(d.amount).toBeLessThanOrEqual(30);
+      expect(d.stopPct).toBeCloseTo(0.5);
+      expect(d.targetPct).toBe(0);
+    }
+    // Normal trades keep their own $5–$10.
+    const normal = decide({ signal: { score: 90, ready: true, reasons: ['x'], atrPct: 0.05 }, settings: settingsFor(usd, c), cash: 150, equity: 150, botInvested: 0, recentEntries: 0, msSinceExit: Infinity });
+    expect(normal.kind === 'enter' && normal.amount).toBe(10);
+  });
+});

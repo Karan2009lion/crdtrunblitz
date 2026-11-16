@@ -262,10 +262,12 @@ export const TIMEFRAMES: Record<Timeframe, TimeframeSpec> = {
 };
 
 /**
- * Blitz: quick trades on the 1-minute chart for at most 2 hours, once a day. No quick-trade rule
- * beat the fees in testing (scripts/blitz-research.ts, scripts/blitz-speed-research.ts); these
- * trade about every 20 minutes with the smallest loss per trade among the quick ones. A session
- * stops early once it has lost BLITZ_STOP_PCT of the balance.
+ * Blitz: quick trades on the 1-minute chart for at most 2 hours, once a day. It enters whenever the
+ * chart leans one way and lets a winner run behind a stop that trails 0.5% under the best price
+ * (over the best price for a short), instead of selling at a fixed target. No quick-trade rule
+ * beat the fees in testing; letting winners run lost about a quarter as much as selling at a fixed
+ * target (scripts/blitz-hold-research.ts). A session stops early once it has lost BLITZ_STOP_PCT
+ * of the balance, and its open trade is closed when the 2 hours are up.
  */
 export const BLITZ_MINUTES = 120;
 export const BLITZ_STOP_PCT = 2;
@@ -273,11 +275,11 @@ export const BLITZ_RULES: Partial<BotSettings> = {
   strategy: 'smart',
   minConfidence: 30,
   stopMode: 'percent',
-  stopLossPct: 0.3,
-  takeProfitPct: 0.45,
-  maxHoldMin: 15,
+  stopLossPct: 0.5,
+  takeProfitPct: 0,
+  maxHoldMin: 0,
   exitOnSignal: false,
-  trailingStop: false,
+  trailingStop: true,
   feeFilter: false,
   trendFilter: false,
   cooldownSec: 60,
@@ -333,6 +335,9 @@ export interface Controls {
   maxSpend: number | null;
   /** The least to spend on one trade: smaller risk-sized trades are raised to it. null = no minimum. */
   minSpend: number | null;
+  /** Blitz's own amounts per trade; null = the same as normal trades. */
+  blitzMinSpend: number | null;
+  blitzMaxSpend: number | null;
   /** New trades per day, counted from local midnight. null = no limit. */
   dailyTrades: number | null;
   /** Local hours when the bot may open trades: from (0–23) up to to (1–24); wraps past midnight if to <= from. null = any time. */
@@ -356,6 +361,8 @@ export const DEFAULT_CONTROLS: Controls = {
   riskPct: 0.5,
   maxSpend: null,
   minSpend: null,
+  blitzMinSpend: null,
+  blitzMaxSpend: null,
   dailyTrades: null,
   hours: null,
   closeAfterHours: false,
@@ -402,7 +409,7 @@ export function botSpec(c: Pick<Controls, 'timeframe'>): ModeSpec {
 
 /** Blitz's quick-trade settings with your amounts and shorting applied (your risk setting is capped at 0.25%). */
 export function blitzSettings(account: Account, controls: Controls = DEFAULT_CONTROLS, trading: TradingMode = 'paper'): BotSettings {
-  const base = settingsFor(account, controls, trading);
+  const base = settingsFor(account, { ...controls, minSpend: controls.blitzMinSpend ?? controls.minSpend, maxSpend: controls.blitzMaxSpend ?? controls.maxSpend }, trading);
   return { ...base, ...BLITZ_RULES, riskPct: Math.min(controls.riskPct, BLITZ_RULES.riskPct!), minStopPct: undefined };
 }
 
@@ -468,6 +475,9 @@ export function checkControls(c: Controls, trading: TradingMode): string | null 
   if (trading !== 'paper' && !c.maxSpend) return 'Real trading needs a most-to-spend amount per trade.';
   if (c.minSpend !== null && !(c.minSpend > 0)) return 'The least to spend on a trade must be above 0.';
   if (c.minSpend !== null && c.maxSpend !== null && c.minSpend > c.maxSpend) return 'The least to spend on a trade can’t be more than the most.';
+  if (c.blitzMinSpend !== null && !(c.blitzMinSpend > 0)) return 'The least Blitz trade must be above 0.';
+  if (c.blitzMaxSpend !== null && !(c.blitzMaxSpend > 0)) return 'The most Blitz trade must be above 0.';
+  if (c.blitzMinSpend !== null && c.blitzMaxSpend !== null && c.blitzMinSpend > c.blitzMaxSpend) return 'The least Blitz trade can’t be more than the most.';
   if (c.dailyTrades !== null && !(Number.isInteger(c.dailyTrades) && c.dailyTrades >= 1 && c.dailyTrades <= 100)) return 'Trades a day must be a whole number from 1 to 100.';
   if (c.hours && !(Number.isInteger(c.hours.from) && Number.isInteger(c.hours.to) && c.hours.from >= 0 && c.hours.from <= 23 && c.hours.to >= 1 && c.hours.to <= 24 && c.hours.from !== c.hours.to % 24))
     return 'Choose a start and an end hour that differ.';

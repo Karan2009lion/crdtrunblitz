@@ -25,6 +25,9 @@ on:
       max_trade:
         description: Most to spend on one trade in dollars, blank for none (new test only)
         default: ''
+      blitz_trade:
+        description: Blitz amount per trade in dollars, e.g. 20-30, blank for the same as above (new test only)
+        default: ''
   # To have it restart itself within the hour if a handover is ever missed, add back:
   #   schedule:
   #     - cron: '23 * * * *'
@@ -80,6 +83,7 @@ jobs:
           TIMEFRAME: ${{ inputs.timeframe }}
           MIN_TRADE: ${{ inputs.min_trade }}
           MAX_TRADE: ${{ inputs.max_trade }}
+          BLITZ_TRADE: ${{ inputs.blitz_trade }}
         run: node scripts/live-run.cjs
       - name: Start the next run
         # Not when the run was cancelled: cancelling must not start another run.
