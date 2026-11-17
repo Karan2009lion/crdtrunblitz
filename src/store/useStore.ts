@@ -338,6 +338,13 @@ export interface Controls {
   /** Blitz's own amounts per trade; null = the same as normal trades. */
   blitzMinSpend: number | null;
   blitzMaxSpend: number | null;
+  /**
+   * How Blitz buys and sells short: at the market price straight away, or with a waiting (limit)
+   * order a little better than the price, which pays no slippage but may not fill.
+   */
+  blitzEntry: 'market' | 'limit';
+  /** Binance's fee: 0.1% standard, or 0.075% when fees are paid in BNB. */
+  feeLevel: 'standard' | 'bnb';
   /** New trades per day, counted from local midnight. null = no limit. */
   dailyTrades: number | null;
   /** Local hours when the bot may open trades: from (0–23) up to to (1–24); wraps past midnight if to <= from. null = any time. */
@@ -363,6 +370,8 @@ export const DEFAULT_CONTROLS: Controls = {
   minSpend: null,
   blitzMinSpend: null,
   blitzMaxSpend: null,
+  blitzEntry: 'market',
+  feeLevel: 'standard',
   dailyTrades: null,
   hours: null,
   closeAfterHours: false,
@@ -420,6 +429,7 @@ export function settingsFor(account: Account, controls: Controls = DEFAULT_CONTR
   return {
     ...TRADER_SETTINGS,
     riskPct: controls.riskPct,
+    feePct: controls.feeLevel === 'bnb' ? 0.075 : 0.1,
     minStopPct: TIMEFRAMES[controls.timeframe].minStopPct || undefined,
     minTradeAmount: controls.minSpend ? controls.minSpend / account.rate : undefined,
     // A normal Binance account can only buy and sell what it holds, so real trading never shorts.

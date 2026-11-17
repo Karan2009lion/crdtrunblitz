@@ -36,6 +36,11 @@ let catchingUp = false;
 const lastThought = { key: '', time: 0 };
 /** A signal that came outside your trading hours or over the daily limit: the 4-hour candle it is waiting on. */
 let waitingFor = 0;
+/** Blitz's waiting (limit) order, if one is out: fills when the price reaches it, or is cancelled. */
+let pendingLimit: { side: Side; amount: number; limit: number; expires: number; reason: string; levels: { stopPct: number; targetPct: number } } | null = null;
+/** How long a Blitz limit order waits, and how far under the price it sits (in typical 1-minute moves). */
+const LIMIT_WAIT_MS = 3 * 60_000;
+const LIMIT_OFFSET_ATR = 0.25;
 let lastRetry = 0;
 let lastHoursClose = 0;
 const lastBlocked = new Map<string, number>();
@@ -59,7 +64,14 @@ const maxHoldMs = () => (get().settings.maxHoldMin ?? 0) * 60_000;
 
 /* ------------------------------------------------------------------ orders */
 
-function applyOpen(side: Side, amount: number, reason: string, levels: { stopPct: number; targetPct: number; situation?: string; blitz?: boolean }) {
+function applyOpen(
+  side: Side,
+  amount: number,
+  reason: string,
+  levels: { stopPct: number; targetPct: number; situation?: string; blitz?: boolean },
+  /** A waiting (limit) order that filled: its price, and no slippage. */
+  at?: { price: number },
+) {
   const s = get();
   if (s.tradingMode !== 'paper') {
     if (side === 'long' && !realBuying()) void openReal(amount, reason, levels, currentPrice() ?? 0);
@@ -71,10 +83,10 @@ function applyOpen(side: Side, amount: number, reason: string, levels: { stopPct
       symbol: SYMBOL,
       side,
       amount,
-      price: currentPrice() ?? 0,
+      price: at?.price ?? currentPrice() ?? 0,
       time: Date.now(),
       feePct: s.settings.feePct,
-      slippagePct: s.settings.slippagePct,
+      slippagePct: at ? 0 : s.settings.slippagePct,
       stopLossPct: levels.stopPct,
       takeProfitPct: levels.targetPct,
       by: 'bot',
@@ -220,6 +232,7 @@ export function stopBlitz(reason: string) {
   const s = get();
   const b = s.blitz;
   if (!b) return;
+  pendingLimit = null;
   const pos = s.positions[0];
   if (pos?.blitz) closeById(pos.id, reason);
   const after = get();
@@ -292,6 +305,19 @@ function onBotBar(_symbol: string, candles: Candle[], closed: Candle | null) {
 
   if (!s.running) return;
   snapshot(now, px);
+
+  // Blitz's waiting order: fill when the price reaches it, cancel when it has waited long enough.
+  if (pendingLimit && (!s.blitz || get().positions.length)) pendingLimit = null;
+  if (pendingLimit && s.blitz) {
+    const o = pendingLimit;
+    if (o.side === 'long' ? px <= o.limit : px >= o.limit) {
+      pendingLimit = null;
+      applyOpen(o.side, o.amount, `Limit order filled. ${o.reason}`, { ...o.levels, blitz: true }, { price: o.limit });
+    } else if (now >= o.expires) {
+      pendingLimit = null;
+      get().log('info', `Blitz: the limit order to ${o.side === 'long' ? 'buy' : 'sell short'} at ${fmtPrice(o.limit)} didn't fill in 3 minutes, so it was cancelled.`, SYMBOL);
+    }
+  }
 
   // Blitz: two hours at most, and an early stop if the session loses too much.
   if (s.blitz && !catchingUp) {
@@ -386,6 +412,14 @@ function decide(sig: Signal, px: number, now: number, retry = false) {
       // Blitz has its own limits (2 hours, once a day), so your hours, daily limit and the lessons don't apply.
       if (s.blitz) {
         waitingFor = 0;
+        if (c.blitzEntry === 'limit' && s.tradingMode === 'paper') {
+          // A waiting order a quarter of a typical 1-minute move better than the price.
+          const offset = px * ((sig.atrPct ?? 0.05) / 100) * LIMIT_OFFSET_ATR;
+          const limit = d.side === 'long' ? px - offset : px + offset;
+          pendingLimit = { side: d.side, amount: d.amount, limit, expires: now + LIMIT_WAIT_MS, reason: d.reason, levels: { stopPct: d.stopPct, targetPct: d.targetPct } };
+          get().log('info', `Blitz: waiting to ${d.side === 'long' ? 'buy' : 'sell short'} ${money(d.amount)} at ${fmtPrice(limit)} or better (limit order, up to 3 minutes; now ${fmtPrice(px)}). ${d.reason}`, SYMBOL);
+          return;
+        }
         return applyOpen(d.side, d.amount, d.reason, { ...d, blitz: true });
       }
       // Your trading hours and daily limit: wait, and try again every minute while the signal is current.

@@ -1,0 +1,67 @@
+name: Blitz test
+
+# A one-off Blitz test on its own paper account, beside the main bot: it starts a new account,
+# presses Start Blitz, and stops at the end time given, with no next run. Its status page is
+# STATUS.md on the branch named below (blitz-test by default).
+on:
+  workflow_dispatch:
+    inputs:
+      amount:
+        description: Starting paper money in dollars
+        default: '150'
+      blitz_trade:
+        description: Blitz amount per trade in dollars, e.g. 20-30
+        default: '20-30'
+      end_at:
+        description: When to stop, e.g. 2026-11-17T23:30:00+05:30
+        required: true
+      settings:
+        description: Extra settings as JSON
+        default: '{"blitzEntry":"limit","feeLevel":"bnb"}'
+      branch:
+        description: Branch for the status page
+        default: blitz-test
+
+permissions:
+  contents: write
+
+concurrency:
+  group: blitz-test
+  cancel-in-progress: false
+
+jobs:
+  run:
+    runs-on: ubuntu-latest
+    timeout-minutes: 355
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - name: Build the app
+        run: |
+          npm ci --no-audit --no-fund
+          npm run build
+          npm i --no-save --no-audit --no-fund playwright@1.63.0
+          npx playwright install --with-deps chromium
+      - name: Serve the app
+        run: |
+          nohup node server/index.mjs > server.log 2>&1 &
+          for i in $(seq 1 30); do curl -sf http://localhost:4173 >/dev/null && exit 0; sleep 1; done
+          cat server.log; exit 1
+      - name: Run the Blitz test
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MINUTES: '340'
+          FRESH: 'true'
+          AMOUNT: ${{ inputs.amount }}
+          TIMEFRAME: '1m'
+          MIN_TRADE: '5'
+          MAX_TRADE: '10'
+          BLITZ_TRADE: ${{ inputs.blitz_trade }}
+          SEED_CONTROLS: ${{ inputs.settings }}
+          START_BLITZ: '1'
+          END_AT: ${{ inputs.end_at }}
+          DATA_BRANCH: ${{ inputs.branch }}
+        run: node scripts/live-run.cjs

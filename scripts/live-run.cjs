@@ -9,6 +9,11 @@
  * Starts a Blitz session (2 hours of quick trades, once a day) when a branch named
  * `blitz-YYYY-MM-DD` exists for today's date in India time.
  *
+ * DATA_BRANCH sets the branch it publishes to (default live-run), so a separate test account can
+ * run beside the main one. START_BLITZ=1 presses Start Blitz as soon as the bot runs; END_AT (a
+ * time, e.g. 2026-11-17T23:30:00+05:30) stops Blitz and the run at that time, with no next run.
+ * SEED_CONTROLS (JSON) adds settings to a new test.
+ *
  * FRESH=true starts a new test with AMOUNT dollars of paper money, deciding every TIMEFRAME
  * (1m, 15m, 1h or 4h), spending MIN_TRADE to MAX_TRADE dollars a trade (either may be blank);
  * otherwise the saved test carries on.
@@ -25,7 +30,8 @@ const MINUTES = Number(process.env.MINUTES || 340);
 /** Seconds between updates (60; local tests use less). */
 const EVERY_MS = Number(process.env.EVERY_SECONDS || 60) * 1000;
 const URL = 'http://localhost:4173/';
-const DATA_BRANCH = 'live-run';
+const DATA_BRANCH = process.env.DATA_BRANCH || 'live-run';
+const END_AT = process.env.END_AT ? Date.parse(process.env.END_AT) : 0;
 const STOP_BRANCH = 'stop-live-run';
 const WORK = path.resolve('live-run-out');
 const RUN_URL = process.env.GITHUB_RUN_ID ? `https://github.com/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}` : '';
@@ -111,7 +117,7 @@ function statusPage(s, ui, now, stoppedNote) {
   const wins = trades.filter((t) => t.pnl > 0).length;
   const fees = trades.reduce((a, t) => a + t.fees, 0) + (pos?.entryFee ?? 0);
   const lines = [
-    '# CRDTrade BTC trader (paper)',
+    DATA_BRANCH === 'live-run' ? '# CRDTrade BTC trader (paper)' : '# CRDTrade Blitz test (paper, separate account)',
     '',
     `Updated **${ist(now)}** · refreshes every minute: reload this page to see the latest${RUN_URL ? ` · [run log](${RUN_URL})` : ''}`,
     '',
@@ -174,6 +180,7 @@ function statusPage(s, ui, now, stoppedNote) {
     // BLITZ_TRADE is "20-30" (least to most) or "30" (most only).
     blitzMinSpend: String(process.env.BLITZ_TRADE || '').includes('-') ? dollars(String(process.env.BLITZ_TRADE).split('-')[0]) : null,
     blitzMaxSpend: dollars(String(process.env.BLITZ_TRADE || '').split('-').pop()),
+    ...(process.env.SEED_CONTROLS ? JSON.parse(process.env.SEED_CONTROLS) : {}),
   };
   const seed = JSON.stringify({ state: { theme: 'dark', mode: 'tested', interval: timeframe, view: 'live', chartView: 'bot', tradingMode: 'paper', account, cash: amount, controls }, version: 1 });
   const browser = await chromium.launch();
@@ -191,8 +198,13 @@ function statusPage(s, ui, now, stoppedNote) {
     await page.click('.power').catch(() => {});
     console.log('bot started');
   } else console.log('bot resumed from the saved state');
+  if (process.env.START_BLITZ === '1') {
+    await page.waitForSelector('.blitz-go:not([disabled])', { timeout: 120_000 }).catch(() => {});
+    await page.click('.blitz-go').catch(() => {});
+    console.log('Blitz started');
+  }
 
-  const end = Date.now() + MINUTES * 60_000;
+  const end = END_AT ? Math.min(END_AT, Date.now() + MINUTES * 60_000) : Date.now() + MINUTES * 60_000;
   let stoppedNote = '';
   while (true) {
     const now = Date.now();
@@ -236,6 +248,23 @@ function statusPage(s, ui, now, stoppedNote) {
       await page.reload().catch(() => {});
     }
     if (stoppedNote) {
+      fs.writeFileSync('live-run-stopped', '1');
+      break;
+    }
+    // A test with an end time: stop Blitz, publish the final result once more, and finish for good.
+    if (END_AT && Date.now() >= END_AT) {
+      await page.click('.blitz [data-on] button, .blitz button:has-text("Stop Blitz")').catch(() => {});
+      await sleep(3000);
+      try {
+        const btc = await page.evaluate(() => localStorage.getItem('crdtrade-btc'));
+        const s = JSON.parse(btc).state;
+        const price = Number(String((await page.$eval('.big-price', (e) => e.textContent).catch(() => '')) || '').replace(/[^0-9.]/g, '')) || null;
+        fs.writeFileSync(path.join(WORK, 'state.json'), JSON.stringify({ btc, savedAt: Date.now() }));
+        fs.writeFileSync(path.join(WORK, 'STATUS.md'), statusPage(s, { price, status: 'Finished' }, Date.now(), `Test finished at ${ist(Date.now())}, as planned. The results below are final.`));
+        publish();
+      } catch (e) {
+        console.log('final publish failed:', e.message);
+      }
       fs.writeFileSync('live-run-stopped', '1');
       break;
     }
