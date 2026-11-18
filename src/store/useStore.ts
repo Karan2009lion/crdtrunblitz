@@ -343,6 +343,11 @@ export interface Controls {
    * order a little better than the price, which pays no slippage but may not fill.
    */
   blitzEntry: 'market' | 'limit';
+  /**
+   * What decides Blitz's trades: 'chart' (the 1-minute chart reading with a trailing stop), or one
+   * of the always-on algorithms in src/trader/blitzAlgos.ts.
+   */
+  blitzEngine: 'chart' | 'supertrend' | 'hull-turns' | 'regime-switch' | 'pressure' | 'snap-back';
   /** Binance's fee: 0.1% standard, or 0.075% when fees are paid in BNB. */
   feeLevel: 'standard' | 'bnb';
   /** New trades per day, counted from local midnight. null = no limit. */
@@ -371,6 +376,7 @@ export const DEFAULT_CONTROLS: Controls = {
   blitzMinSpend: null,
   blitzMaxSpend: null,
   blitzEntry: 'market',
+  blitzEngine: 'chart',
   feeLevel: 'standard',
   dailyTrades: null,
   hours: null,
@@ -419,7 +425,9 @@ export function botSpec(c: Pick<Controls, 'timeframe'>): ModeSpec {
 /** Blitz's quick-trade settings with your amounts and shorting applied (your risk setting is capped at 0.25%). */
 export function blitzSettings(account: Account, controls: Controls = DEFAULT_CONTROLS, trading: TradingMode = 'paper'): BotSettings {
   const base = settingsFor(account, { ...controls, minSpend: controls.blitzMinSpend ?? controls.minSpend, maxSpend: controls.blitzMaxSpend ?? controls.maxSpend }, trading);
-  return { ...base, ...BLITZ_RULES, riskPct: Math.min(controls.riskPct, BLITZ_RULES.riskPct!), minStopPct: undefined };
+  const rules = { ...base, ...BLITZ_RULES, riskPct: Math.min(controls.riskPct, BLITZ_RULES.riskPct!), minStopPct: undefined };
+  // The algorithms move their own stops with the chart, once a minute.
+  return controls.blitzEngine && controls.blitzEngine !== 'chart' ? { ...rules, trailingStop: false } : rules;
 }
 
 /** The trader's settings with your controls applied. */

@@ -6,6 +6,7 @@ import { accountValue, closeById, nextDecisionTime, startBlitz, startBot, stopBl
 import { markPrice, unrealized } from '../engine/broker';
 import { clock, dateTime, duration, money, pct, price, signedMoney } from '../lib/format';
 import { Icon } from './Icon';
+import { ALGO_LABEL } from '../trader/blitzAlgos';
 
 /** The main screen's bot panel: start and stop, the open trade, and the balance. Everything else is on Profile. */
 export function BotPanel() {
@@ -51,6 +52,7 @@ export function BotPanel() {
 /** Blitz: up to 2 hours of quick trades on the 1-minute chart, once a day. */
 function Blitz({ now }: { now: number }) {
   const blitz = useStore((s) => s.blitz);
+  const engine = useStore((s) => s.controls.blitzEngine);
   const usedToday = useStore((s) => s.blitzUsedOn === dayStart(now));
   const tradingMode = useStore((s) => s.tradingMode);
   const holding = useStore((s) => s.positions.length > 0 && !s.positions[0].blitz);
@@ -68,6 +70,7 @@ function Blitz({ now }: { now: number }) {
           <strong>Blitz on</strong>
           <span className="num">{duration(Math.max(0, blitz.endsAt - now))} left</span>
         </div>
+        {engine && engine !== 'chart' && <span className="hint">{ALGO_LABEL[engine]}</span>}
         <span className="hint">
           {done.length} trade{done.length === 1 ? '' : 's'}, {done.filter((t) => t.pnl > 0).length} won ·{' '}
           <span className={made >= 0 ? 'up' : 'down'}>{signedMoney(made)}</span> this session · stops early at −{BLITZ_STOP_PCT}%

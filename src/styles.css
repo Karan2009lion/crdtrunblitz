@@ -1909,3 +1909,14 @@ dialog.confirm p {
   color: var(--accent-text);
   background: var(--accent-soft);
 }
+
+.select {
+  height: 34px;
+  max-width: 100%;
+  padding: 0 8px;
+  border-radius: var(--r-sm);
+  border: 1px solid var(--line-strong);
+  background: var(--surface-2);
+  color: var(--text);
+  font: inherit;
+}

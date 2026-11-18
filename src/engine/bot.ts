@@ -9,6 +9,7 @@ import { keepAwake } from '../lib/wakeLock';
 import { BLITZ_MINUTES, BLITZ_STOP_PCT, MARKET, MAX_FILLS, MAX_SNAPSHOT_COUNT, SYMBOL, TIMEFRAMES, blitzSettings, botSpec, dayStart, describeControls, describeHours, inHours, settingsFor, useStore, type ModeSpec } from '../store/useStore';
 import { BRAIN_WARMUP, brainView, inputsNow, trusted, wouldSkip } from '../trader/brain';
 import { describeSituation, lessonVerdict, type Situation } from '../trader/lessons';
+import { ALGO_LABEL, algoStop, algoTrail, algoWant, readAlgoChart, type BlitzAlgo, type Want } from '../trader/blitzAlgos';
 import { refreshLessons, situationNow, useLessons } from '../trader/useLessons';
 import { STOP_BACKUP_GAP, checkRealStops, closeReal, openReal, realBusy, realBuying, realLastExit, syncRealCash } from './realOrders';
 import { refreshReal, useReal } from '../real/useReal';
@@ -356,6 +357,9 @@ function decideOnClosed(history: Candle[], closed: Candle, px: number, now: numb
   set({ lastDecisionBar: closed.time });
   waitingFor = 0;
   void refreshLessons(history, get().settings, get().controls.timeframe);
+  // Blitz with an algorithm: it decides which way to be, every minute.
+  const engine = get().controls.blitzEngine;
+  if (get().blitz && engine && engine !== 'chart') return blitzAlgoStep(engine, history, px, now);
   const sig = evaluate(get().settings.strategy, history);
   if (late) {
     const closedAt = (closed.time + mode().barSec) * 1000;
@@ -466,6 +470,51 @@ function decide(sig: Signal, px: number, now: number, retry = false) {
       applyOpen(d.side, d.amount, `${retry ? 'Signal from the last 4-hour candle, taken now that your hours and daily limit allow it. ' : ''}${d.reason}${netNote}`, { ...d, situation });
     }
   }
+}
+
+/**
+ * One minute of a Blitz algorithm: move the open trade's stop with the chart, then buy, sell short,
+ * close or flip so the bot is the way the algorithm wants to be.
+ */
+function blitzAlgoStep(algo: BlitzAlgo, history: Candle[], px: number, now: number) {
+  const bars = history.slice(-400);
+  if (bars.length < 160) return;
+  const c = readAlgoChart(bars);
+  const i = bars.length - 1;
+  const s = get();
+  const pos = s.positions[0];
+  const held: Want = pos ? (pos.side === 'long' ? 1 : -1) : pendingLimit ? (pendingLimit.side === 'long' ? 1 : -1) : 0;
+  // Move the stop with the chart, never backwards.
+  if (pos && pos.blitz && !pos.real && pos.stopLoss) {
+    const side = pos.side === 'long' ? 1 : -1;
+    const best = side === 1 ? Math.max(pos.peak, bars[i].high) : Math.min(pos.peak, bars[i].low);
+    const stop = algoTrail(algo, c, i, side, pos.stopLoss, best);
+    if (stop !== pos.stopLoss || best !== pos.peak) set({ positions: get().positions.map((p) => (p.id === pos.id ? { ...p, stopLoss: stop, peak: best } : p)) });
+  }
+  const want = algoWant(algo, bars, c, i, held);
+  if (want === held) return;
+  const name = ALGO_LABEL[algo].split(':')[0];
+  if (pendingLimit && want !== (pendingLimit.side === 'long' ? 1 : -1)) pendingLimit = null;
+  if (pos && want !== (pos.side === 'long' ? 1 : -1)) {
+    closeById(pos.id, want === 0 ? `${name}: out` : `${name}: flipping to ${want === 1 ? 'buy' : 'sell short'}`);
+  }
+  if (want === 0 || get().positions.length) return;
+  const st = s.settings;
+  const side: Side = want === 1 ? 'long' : 'short';
+  if (side === 'short' && !st.allowShort) return;
+  const amount = Math.floor(Math.min(st.tradeAmount, get().cash / (1 + st.feePct / 100)) * 100) / 100;
+  if (amount < Math.max(1, st.minTradeAmount ?? 0)) return blocked('budget', `${NAME}: ${name} wants to ${side === 'long' ? 'buy' : 'sell short'}, but only ${money(get().cash)} cash is left.`, now);
+  const stop = algoStop(algo, c, i, want, px);
+  const stopPct = (Math.abs(px - stop) / px) * 100;
+  const reason = `${name}.`;
+  if (s.controls.blitzEntry === 'limit' && s.tradingMode === 'paper') {
+    const offset = c.atr[i] * 0.25;
+    const limit = side === 'long' ? px - offset : px + offset;
+    pendingLimit = { side, amount, limit, expires: now + LIMIT_WAIT_MS, reason, levels: { stopPct, targetPct: 0 } };
+    get().log('info', `Blitz: waiting to ${side === 'long' ? 'buy' : 'sell short'} ${money(amount)} at ${fmtPrice(limit)} or better (limit order, up to 3 minutes; now ${fmtPrice(px)}). ${reason}`, SYMBOL);
+    return;
+  }
+  applyOpen(side, amount, reason, { stopPct, targetPct: 0, blitz: true });
 }
 
 function think(key: string, message: string, now: number) {

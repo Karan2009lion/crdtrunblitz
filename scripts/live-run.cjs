@@ -100,6 +100,13 @@ const dur = (ms) => {
 const cell = (s) => String(s).replace(/\|/g, '/').replace(/\n/g, ' ');
 const EVERY = { '1m': 'every minute', '15m': 'every 15 minutes', '1h': 'every hour', '4h': 'every 4 hours' };
 const CANDLE = { '1m': '1-minute', '15m': '15-minute', '1h': '1-hour', '4h': '4-hour' };
+const ENGINE = {
+  supertrend: 'Trend switch: always in, flipping when the short-term trend line is crossed',
+  'hull-turns': 'Smooth-trend turns',
+  'regime-switch': 'Regime switch',
+  pressure: 'Buy/sell pressure: follows sudden surges of buying or selling volume',
+  'snap-back': 'Snap-back',
+};
 
 /** A position's value at a price: a short is worth its cash plus what the fall has made. */
 const valueOf = (p, px) => (p.side === 'short' ? p.collateral + (p.entryPrice - px) * p.qty : p.qty * px);
@@ -129,7 +136,7 @@ function statusPage(s, ui, now, stoppedNote) {
     `| Just holding BTC instead | ${pct(hold)} |`,
     `| Cash | ${usd(s.cash)} |`,
     s.blitz
-      ? `| Blitz | **On until ${ist(s.blitz.endsAt)}** · quick trades on the 1-minute chart${s.controls?.blitzMaxSpend ? `, ${s.controls.blitzMinSpend ? `${usd(s.controls.blitzMinSpend)}–` : 'up to '}${usd(s.controls.blitzMaxSpend)} a trade` : ''} · ${usd(eq - s.blitz.startEquity, true)} this session (stops early at −2%) |`
+      ? `| Blitz | **On until ${ist(s.blitz.endsAt)}** · ${ENGINE[s.controls?.blitzEngine] ?? 'quick trades on the 1-minute chart'}${s.controls?.blitzMaxSpend ? `, ${s.controls.blitzMinSpend ? `${usd(s.controls.blitzMinSpend)}–` : 'up to '}${usd(s.controls.blitzMaxSpend)} a trade` : ''} · ${usd(eq - s.blitz.startEquity, true)} this session (stops early at −2%) |`
       : `| Blitz | ${s.blitzUsedOn && new Date(now).setHours(0, 0, 0, 0) <= s.blitzUsedOn ? 'Used today' : 'Not used today'} · to start it, ask Claude or create a branch named \`${blitzBranch(now)}\` |`,
     `| Open trade | ${pos ? `${pos.blitz ? 'Blitz: ' : ''}${pos.side === 'short' ? 'Sold short' : 'Bought'} ${pos.qty.toFixed(5)} BTC at ${usd(pos.entryPrice)}${pos.stopLoss ? `, stop ${usd(pos.stopLoss)}` : ''}${pos.takeProfit ? `, target ${usd(pos.takeProfit)}` : ''} · now ${usd(posValue - pos.collateral - pos.entryFee, true)}` : `None: waiting for ${CANDLE[tf] ?? tf} momentum to turn`} |`,
     `| Trades | ${trades.length} (${wins} won) · fees paid ${usd(fees)} |`,

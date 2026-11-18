@@ -10,6 +10,7 @@ import { ledger, INDIA_TDS } from '../lib/tax';
 import { describeSituation, lessonVerdict, lossCause, LESSON_MIN, shrunkAverage, type Situation } from '../trader/lessons';
 import { useLessons } from '../trader/useLessons';
 import { BRAIN_INPUTS, BRAIN_WARMUP, TRUST_AVG, TRUST_MIN, trusted } from '../trader/brain';
+import { ALGO_LABEL } from '../trader/blitzAlgos';
 import { TestRecord } from './TestRecord';
 
 const MODE_LABEL: Record<TradingMode, string> = { paper: 'Paper money', testnet: 'Binance Testnet', live: 'Real money' };
@@ -169,6 +170,9 @@ interface Form {
   blitzOn: boolean;
   blitzMin: string;
   blitzMax: string;
+  blitzEngine: Controls['blitzEngine'];
+  blitzEntry: Controls['blitzEntry'];
+  feeLevel: Controls['feeLevel'];
   dailyOn: boolean;
   daily: string;
   hoursOn: boolean;
@@ -192,6 +196,9 @@ const toForm = (c: Controls): Form => ({
   blitzOn: c.blitzMaxSpend !== null || c.blitzMinSpend !== null,
   blitzMin: c.blitzMinSpend?.toString() ?? '20',
   blitzMax: c.blitzMaxSpend?.toString() ?? '30',
+  blitzEngine: c.blitzEngine ?? 'chart',
+  blitzEntry: c.blitzEntry ?? 'market',
+  feeLevel: c.feeLevel ?? 'standard',
   dailyOn: c.dailyTrades !== null,
   daily: String(c.dailyTrades ?? 15),
   hoursOn: c.hours !== null,
@@ -213,6 +220,9 @@ const toControls = (f: Form, base: Controls): Controls => ({
   minSpend: num(f.minOn, f.min),
   blitzMinSpend: f.blitzOn && f.blitzMin.trim() !== '' ? Number(f.blitzMin) : null,
   blitzMaxSpend: f.blitzOn && f.blitzMax.trim() !== '' ? Number(f.blitzMax) : null,
+  blitzEngine: f.blitzEngine,
+  blitzEntry: f.blitzEntry,
+  feeLevel: f.feeLevel,
   dailyTrades: num(f.dailyOn, f.daily),
   hours: f.hoursOn ? { from: Number(f.from), to: Number(f.to) } : null,
   closeAfterHours: f.closeAfterHours,
@@ -342,6 +352,41 @@ function BotSettings() {
         <span className="hint">
           Bigger Blitz trades make wins and losses bigger. Fees are a share of each trade (0.1% each way), so they grow with it rather than shrink.
         </span>
+      </div>
+      <div className="choice">
+        <label className="field-label" htmlFor="blitz-engine">
+          Blitz method
+        </label>
+        <div className="choice-row">
+          <select id="blitz-engine" className="select" value={form.blitzEngine} onChange={(e) => up({ blitzEngine: e.target.value as Controls['blitzEngine'] })}>
+            <option value="chart">Chart reading with a trailing stop (about 2 trades in 2 hours)</option>
+            {(Object.keys(ALGO_LABEL) as (keyof typeof ALGO_LABEL)[]).map((k) => (
+              <option key={k} value={k}>
+                {ALGO_LABEL[k]}
+              </option>
+            ))}
+          </select>
+        </div>
+        <label className="check-line">
+          <input type="checkbox" checked={form.blitzEntry === 'limit'} onChange={(e) => up({ blitzEntry: e.target.checked ? 'limit' : 'market' })} /> Enter with waiting (limit) orders: no slippage, but some
+          don't fill
+        </label>
+        <span className="hint">
+          In testing, every method was about even before fees; the more it trades, the more it pays in fees. The trend switch trades about 8 times in 2 hours.
+        </span>
+      </div>
+      <div className="choice">
+        <span className="field-label" id="fee-label">
+          Binance fee
+        </span>
+        <div className="segmented" role="radiogroup" aria-labelledby="fee-label">
+          <button type="button" role="radio" aria-checked={form.feeLevel === 'standard'} aria-pressed={form.feeLevel === 'standard'} onClick={() => up({ feeLevel: 'standard' })}>
+            0.1% standard
+          </button>
+          <button type="button" role="radio" aria-checked={form.feeLevel === 'bnb'} aria-pressed={form.feeLevel === 'bnb'} onClick={() => up({ feeLevel: 'bnb' })}>
+            0.075% paying in BNB
+          </button>
+        </div>
       </div>
       <Choice
         label="Trades a day"
