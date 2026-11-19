@@ -190,3 +190,17 @@ describe('Blitz', () => {
     expect(normal.kind === 'enter' && normal.amount).toBe(10);
   });
 });
+
+describe('4-hour style', () => {
+  it('steady keeps stop 2.5× / target 6×, active uses 2× / 4×, other timeframes unchanged', async () => {
+    const { settingsFor, DEFAULT_CONTROLS } = await import('../store/useStore');
+    const { exitLevels } = await import('../engine/rules');
+    const usd = { currency: 'USD' as const, rate: 1 };
+    const steady = settingsFor(usd, DEFAULT_CONTROLS);
+    expect(exitLevels(steady, 1)).toEqual({ stopPct: 2.5, targetPct: 6 });
+    const active = settingsFor(usd, { ...DEFAULT_CONTROLS, fourHourStyle: 'active' });
+    expect(exitLevels(active, 1)).toEqual({ stopPct: 2, targetPct: 4 });
+    const hourly = settingsFor(usd, { ...DEFAULT_CONTROLS, timeframe: '1h', fourHourStyle: 'active' });
+    expect(hourly.stopAtr).toBe(2.5);
+  });
+});

@@ -10,13 +10,14 @@ import type { TrendRebalance } from './trend';
  * its high and low; strategy signals are read when each strategy candle closes.
  */
 
-export type BacktestTimeframe = '1m' | '5m' | '15m' | '30m' | '1h' | '4h';
+export type BacktestTimeframe = '1m' | '5m' | '15m' | '30m' | '1h' | '2h' | '4h';
 export const TIMEFRAMES: { id: BacktestTimeframe; label: string; seconds: number }[] = [
   { id: '1m', label: '1m', seconds: 60 },
   { id: '5m', label: '5m', seconds: 300 },
   { id: '15m', label: '15m', seconds: 900 },
   { id: '30m', label: '30m', seconds: 1800 },
   { id: '1h', label: '1h', seconds: 3600 },
+  { id: '2h', label: '2h', seconds: 7200 },
   { id: '4h', label: '4h', seconds: 14400 },
 ];
 export const tfSeconds = (tf: BacktestTimeframe) => TIMEFRAMES.find((t) => t.id === tf)!.seconds;

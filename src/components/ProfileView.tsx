@@ -161,6 +161,7 @@ function Money() {
 
 interface Form {
   timeframe: Timeframe;
+  fourHourStyle: Controls['fourHourStyle'];
   brain: boolean;
   risk: string;
   spendOn: boolean;
@@ -187,6 +188,7 @@ interface Form {
 
 const toForm = (c: Controls): Form => ({
   timeframe: c.timeframe,
+  fourHourStyle: c.fourHourStyle ?? 'steady',
   brain: c.brain,
   risk: String(c.riskPct),
   spendOn: c.maxSpend !== null,
@@ -214,6 +216,7 @@ const num = (on: boolean, v: string) => (on ? (v.trim() === '' ? NaN : Number(v)
 const toControls = (f: Form, base: Controls): Controls => ({
   ...base,
   timeframe: f.timeframe,
+  fourHourStyle: f.fourHourStyle,
   brain: f.brain,
   riskPct: f.risk.trim() === '' ? NaN : Number(f.risk),
   maxSpend: num(f.spendOn, f.spend),
@@ -282,6 +285,26 @@ function BotSettings() {
           {form.timeframe !== '4h' ? ' Deciding more often did not make more money in testing; 4 hours did best.' : ''}
         </span>
       </div>
+      {form.timeframe === '4h' && (
+        <div className="choice">
+          <span className="field-label" id="style-label">
+            4-hour style
+          </span>
+          <div className="segmented" role="radiogroup" aria-labelledby="style-label">
+            <button type="button" role="radio" aria-checked={form.fourHourStyle === 'steady'} aria-pressed={form.fourHourStyle === 'steady'} onClick={() => up({ fourHourStyle: 'steady' })}>
+              Steady
+            </button>
+            <button type="button" role="radio" aria-checked={form.fourHourStyle === 'active'} aria-pressed={form.fourHourStyle === 'active'} onClick={() => up({ fourHourStyle: 'active' })}>
+              Active
+            </button>
+          </div>
+          <span className="hint">
+            {form.fourHourStyle === 'active'
+              ? 'Stop 2× and target 4× the typical move: about 7 trades a month. In testing +12.4% (Mar 2025 – Mar 2026) and +2.6% (Apr – Oct 2026), with drops up to 5.7%.'
+              : 'Stop 2.5× and target 6× the typical move: about 3 trades a month. In testing +9.0% and +2.6%, with drops under 3%.'}
+          </span>
+        </div>
+      )}
       <div className="choice">
         <label className="field-label" htmlFor="risk">
           Most a trade can lose

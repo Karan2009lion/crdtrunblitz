@@ -327,6 +327,11 @@ export type TaxSystem = 'none' | 'india' | 'flat';
 export interface Controls {
   /** How often the bot thinks about buying: the candle size it decides on. */
   timeframe: Timeframe;
+  /**
+   * On 4-hour candles: 'steady' (stop 2.5×, target 6× the typical move) or 'active' (stop 2×,
+   * target 4×: about twice as many trades, deeper drops). scripts/four-hour-best-research.ts.
+   */
+  fourHourStyle: 'steady' | 'active';
   /** Let the neural network skip signals, once its skipped signals have clearly lost money. */
   brain: boolean;
   /** The most one trade may lose if its stop is hit, in % of the account, fees included. */
@@ -369,6 +374,7 @@ export interface Controls {
 }
 export const DEFAULT_CONTROLS: Controls = {
   timeframe: '4h',
+  fourHourStyle: 'steady',
   brain: true,
   riskPct: 0.5,
   maxSpend: null,
@@ -389,7 +395,7 @@ export const DEFAULT_CONTROLS: Controls = {
 };
 
 /** The bot's candle size, wording and spec rows for your chosen timeframe. */
-export function botSpec(c: Pick<Controls, 'timeframe'>): ModeSpec {
+export function botSpec(c: Pick<Controls, 'timeframe'> & { fourHourStyle?: Controls['fourHourStyle'] }): ModeSpec {
   const t = TIMEFRAMES[c.timeframe] ?? TIMEFRAMES['4h'];
   const base = MODES.tested;
   const decides =
@@ -413,12 +419,15 @@ export function botSpec(c: Pick<Controls, 'timeframe'>): ModeSpec {
         : k === 'Buys when'
           ? [k, `Momentum (MACD) on ${t.candle} candles turns up, score +50 or more`]
           : k === 'Stop loss'
-            ? [k, `2.5× the typical ${t.candle} move (ATR)${t.minStopPct ? `, at least ${t.minStopPct}% away` : ''}`]
+            ? [k, `${t.id === '4h' && c.fourHourStyle === 'active' ? '2' : '2.5'}× the typical ${t.candle} move (ATR)${t.minStopPct ? `, at least ${t.minStopPct}% away` : ''}`]
             : k === 'Take profit'
-              ? [k, t.minStopPct ? '6× ATR, widened with the stop' : '6× ATR']
+              ? [k, t.minStopPct ? '6× ATR, widened with the stop' : t.id === '4h' && c.fourHourStyle === 'active' ? '4× ATR' : '6× ATR']
               : [k, v],
     ),
-    results: t.results,
+    results:
+      t.id === '4h' && c.fourHourStyle === 'active'
+        ? 'Active style (stop 2×, target 4× the typical move): in testing +12.4% from Mar 2025 to Mar 2026 and +2.6% from Apr to Oct 2026, with about 7 trades a month and drops of up to 5.7%. The steady style made +9.0% and +2.6% with drops under 3%.'
+        : t.results,
   };
 }
 
@@ -439,6 +448,7 @@ export function settingsFor(account: Account, controls: Controls = DEFAULT_CONTR
     riskPct: controls.riskPct,
     feePct: controls.feeLevel === 'bnb' ? 0.075 : 0.1,
     minStopPct: TIMEFRAMES[controls.timeframe].minStopPct || undefined,
+    ...(controls.timeframe === '4h' && controls.fourHourStyle === 'active' ? { stopAtr: 2, targetAtr: 4 } : {}),
     minTradeAmount: controls.minSpend ? controls.minSpend / account.rate : undefined,
     // A normal Binance account can only buy and sell what it holds, so real trading never shorts.
     allowShort: real ? false : controls.allowShort,
