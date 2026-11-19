@@ -12,7 +12,7 @@ import { atr, bollinger, ema, rsi } from '../lib/indicators';
 export type BlitzAlgo = 'supertrend' | 'hull-turns' | 'regime-switch' | 'pressure' | 'snap-back';
 
 export const ALGO_LABEL: Record<BlitzAlgo, string> = {
-  supertrend: 'Trend switch: always in, flipping when the short-term trend line is crossed',
+  supertrend: 'Trend switch: flips between buying and selling short when its trend line is crossed; after a stop-out it waits for a real flip',
   'hull-turns': 'Smooth-trend turns: follows each turn of a fast, low-lag average',
   'regime-switch': 'Regime switch: follows breakouts when trending, fades stretches when choppy',
   pressure: 'Buy/sell pressure: follows sudden surges of buying or selling volume',
@@ -46,7 +46,7 @@ function wma(v: number[], n: number): number[] {
 }
 
 /** Reads the chart once; every value uses only candles up to that point. */
-export function readAlgoChart(bars: Candle[]): AlgoChart {
+export function readAlgoChart(bars: Candle[], trendWidth = 3): AlgoChart {
   const n = bars.length;
   const close = bars.map((b) => b.close);
   const a = atr(bars, 10);
@@ -59,8 +59,8 @@ export function readAlgoChart(bars: Candle[]): AlgoChart {
   for (let i = 0; i < n; i++) {
     if (!(a[i] > 0)) continue;
     const mid = (bars[i].high + bars[i].low) / 2;
-    const bu = mid + 3 * a[i];
-    const bl = mid - 3 * a[i];
+    const bu = mid + trendWidth * a[i];
+    const bl = mid - trendWidth * a[i];
     upper = Number.isNaN(upper) || bu < upper || bars[i - 1]?.close > upper ? bu : upper;
     lower = Number.isNaN(lower) || bl > lower || bars[i - 1]?.close < lower ? bl : lower;
     if (dir === 1 && close[i] < lower) dir = -1;
@@ -175,15 +175,43 @@ export function algoWant(algo: BlitzAlgo, bars: Candle[], c: AlgoChart, i: numbe
   }
 }
 
+/**
+ * Options for the trend switch. `room`: the stop stays at least this many typical 1-minute moves
+ * from the price, even when the trend line is closer (right after a flip it often is, and normal
+ * wiggles then stop the trade out within minutes). `waitForFlip`: after a stop-out, don't go
+ * straight back in the same direction; wait until the trend line flips.
+ */
+export interface AlgoOptions {
+  room?: number;
+  waitForFlip?: boolean;
+}
+/**
+ * The trend switch as Blitz runs it: the trend line 5 typical moves from the price, the stop at
+ * least 1.5 typical moves away, and no re-entry after a stop-out until the line flips. In testing
+ * this lost about $0.17 a 2-hour session with $30 trades, against $0.40 for the first version
+ * (scripts/blitz-algos-research.ts with TREND_FIX=1 and WIDTHS=3,4,5,6).
+ */
+export const TREND_SWITCH: AlgoOptions & { width: number } = { width: 5, room: 1.5, waitForFlip: true };
+
 /** The safety stop for a new position: the trend line for the trend switch, else 2.5 typical moves away. */
-export function algoStop(algo: BlitzAlgo, c: AlgoChart, i: number, side: 1 | -1, px: number): number {
-  if (algo === 'supertrend' && Number.isFinite(c.stLine[i])) return c.stLine[i];
+export function algoStop(algo: BlitzAlgo, c: AlgoChart, i: number, side: 1 | -1, px: number, opt: AlgoOptions = {}): number {
+  if (algo === 'supertrend' && Number.isFinite(c.stLine[i])) {
+    const roomStop = px - side * (opt.room ?? 0) * c.atr[i];
+    return side === 1 ? Math.min(c.stLine[i], roomStop) : Math.max(c.stLine[i], roomStop);
+  }
   return px - side * 2.5 * c.atr[i];
 }
 
-/** Moves the stop with the chart, never backwards: along the trend line, or 2.5 typical moves behind the best price. */
-export function algoTrail(algo: BlitzAlgo, c: AlgoChart, i: number, side: 1 | -1, stop: number, best: number): number {
-  const next = algo === 'supertrend' && Number.isFinite(c.stLine[i]) ? c.stLine[i] : best - side * 2.5 * c.atr[i];
+/**
+ * Moves the stop with the chart, never backwards: along the trend line (keeping `room` from the
+ * latest close), or 2.5 typical moves behind the best price.
+ */
+export function algoTrail(algo: BlitzAlgo, c: AlgoChart, i: number, side: 1 | -1, stop: number, best: number, opt: AlgoOptions = {}, close = best): number {
+  let next: number;
+  if (algo === 'supertrend' && Number.isFinite(c.stLine[i])) {
+    const roomStop = close - side * (opt.room ?? 0) * c.atr[i];
+    next = side === 1 ? Math.min(c.stLine[i], roomStop) : Math.max(c.stLine[i], roomStop);
+  } else next = best - side * 2.5 * c.atr[i];
   return side === 1 ? Math.max(stop, next) : Math.min(stop, next);
 }
 

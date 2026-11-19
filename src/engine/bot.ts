@@ -9,7 +9,7 @@ import { keepAwake } from '../lib/wakeLock';
 import { BLITZ_MINUTES, BLITZ_STOP_PCT, MARKET, MAX_FILLS, MAX_SNAPSHOT_COUNT, SYMBOL, TIMEFRAMES, blitzSettings, botSpec, dayStart, describeControls, describeHours, inHours, settingsFor, useStore, type ModeSpec } from '../store/useStore';
 import { BRAIN_WARMUP, brainView, inputsNow, trusted, wouldSkip } from '../trader/brain';
 import { describeSituation, lessonVerdict, type Situation } from '../trader/lessons';
-import { ALGO_LABEL, algoStop, algoTrail, algoWant, readAlgoChart, type BlitzAlgo, type Want } from '../trader/blitzAlgos';
+import { ALGO_LABEL, TREND_SWITCH, algoStop, algoTrail, algoWant, readAlgoChart, type AlgoOptions, type BlitzAlgo, type Want } from '../trader/blitzAlgos';
 import { refreshLessons, situationNow, useLessons } from '../trader/useLessons';
 import { STOP_BACKUP_GAP, checkRealStops, closeReal, openReal, realBusy, realBuying, realLastExit, syncRealCash } from './realOrders';
 import { refreshReal, useReal } from '../real/useReal';
@@ -38,6 +38,9 @@ const lastThought = { key: '', time: 0 };
 /** A signal that came outside your trading hours or over the daily limit: the 4-hour candle it is waiting on. */
 let waitingFor = 0;
 /** Blitz's waiting (limit) order, if one is out: fills when the price reaches it, or is cancelled. */
+/** The trend switch's last Blitz trade, and a direction it may not re-enter until its trend line flips. */
+let algoTradeId = '';
+let blockedSide: Want = 0;
 let pendingLimit: { side: Side; amount: number; limit: number; expires: number; reason: string; levels: { stopPct: number; targetPct: number } } | null = null;
 /** How long a Blitz limit order waits, and how far under the price it sits (in typical 1-minute moves). */
 const LIMIT_WAIT_MS = 3 * 60_000;
@@ -479,19 +482,29 @@ function decide(sig: Signal, px: number, now: number, retry = false) {
 function blitzAlgoStep(algo: BlitzAlgo, history: Candle[], px: number, now: number) {
   const bars = history.slice(-400);
   if (bars.length < 160) return;
-  const c = readAlgoChart(bars);
+  const opt: AlgoOptions = algo === 'supertrend' ? TREND_SWITCH : {};
+  const c = readAlgoChart(bars, algo === 'supertrend' ? TREND_SWITCH.width : 3);
   const i = bars.length - 1;
   const s = get();
   const pos = s.positions[0];
+  // After a stop-out, don't go that way again until the trend line flips.
+  if (!pos && algoTradeId) {
+    const t = s.trades.find((x) => x.id === algoTradeId);
+    if (t && opt.waitForFlip && /stop/i.test(t.exitReason)) blockedSide = t.side === 'long' ? 1 : -1;
+    algoTradeId = '';
+  }
+  if (blockedSide && c.stDir[i] !== blockedSide) blockedSide = 0;
+  if (pos?.blitz) algoTradeId = pos.id;
   const held: Want = pos ? (pos.side === 'long' ? 1 : -1) : pendingLimit ? (pendingLimit.side === 'long' ? 1 : -1) : 0;
   // Move the stop with the chart, never backwards.
   if (pos && pos.blitz && !pos.real && pos.stopLoss) {
     const side = pos.side === 'long' ? 1 : -1;
     const best = side === 1 ? Math.max(pos.peak, bars[i].high) : Math.min(pos.peak, bars[i].low);
-    const stop = algoTrail(algo, c, i, side, pos.stopLoss, best);
+    const stop = algoTrail(algo, c, i, side, pos.stopLoss, best, opt, bars[i].close);
     if (stop !== pos.stopLoss || best !== pos.peak) set({ positions: get().positions.map((p) => (p.id === pos.id ? { ...p, stopLoss: stop, peak: best } : p)) });
   }
-  const want = algoWant(algo, bars, c, i, held);
+  let want = algoWant(algo, bars, c, i, held);
+  if (blockedSide && want === blockedSide) want = 0;
   if (want === held) return;
   const name = ALGO_LABEL[algo].split(':')[0];
   if (pendingLimit && want !== (pendingLimit.side === 'long' ? 1 : -1)) pendingLimit = null;
@@ -504,7 +517,7 @@ function blitzAlgoStep(algo: BlitzAlgo, history: Candle[], px: number, now: numb
   if (side === 'short' && !st.allowShort) return;
   const amount = Math.floor(Math.min(st.tradeAmount, get().cash / (1 + st.feePct / 100)) * 100) / 100;
   if (amount < Math.max(1, st.minTradeAmount ?? 0)) return blocked('budget', `${NAME}: ${name} wants to ${side === 'long' ? 'buy' : 'sell short'}, but only ${money(get().cash)} cash is left.`, now);
-  const stop = algoStop(algo, c, i, want, px);
+  const stop = algoStop(algo, c, i, want, px, opt);
   const stopPct = (Math.abs(px - stop) / px) * 100;
   const reason = `${name}.`;
   if (s.controls.blitzEntry === 'limit' && s.tradingMode === 'paper') {

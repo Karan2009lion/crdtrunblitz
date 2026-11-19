@@ -101,7 +101,7 @@ const cell = (s) => String(s).replace(/\|/g, '/').replace(/\n/g, ' ');
 const EVERY = { '1m': 'every minute', '15m': 'every 15 minutes', '1h': 'every hour', '4h': 'every 4 hours' };
 const CANDLE = { '1m': '1-minute', '15m': '15-minute', '1h': '1-hour', '4h': '4-hour' };
 const ENGINE = {
-  supertrend: 'Trend switch: always in, flipping when the short-term trend line is crossed',
+  supertrend: 'Trend switch (fixed): flips when its trend line is crossed, stop at least 1.5 typical moves away, waits for a real flip after a stop',
   'hull-turns': 'Smooth-trend turns',
   'regime-switch': 'Regime switch',
   pressure: 'Buy/sell pressure: follows sudden surges of buying or selling volume',
