@@ -1,4 +1,5 @@
 import './styles.css';
+import { signIn } from './login';
 
 /**
  * Only one tab may run the app: two tabs would run two bots on the same paper account and
@@ -10,6 +11,7 @@ const root = document.getElementById('root')!;
 const forever = () => new Promise<never>(() => {});
 
 async function start() {
+  await signIn(root);
   root.replaceChildren();
   await import('./boot');
 }

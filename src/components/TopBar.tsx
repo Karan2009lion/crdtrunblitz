@@ -4,6 +4,7 @@ import { usePrices } from '../hooks/useMarket';
 import { equity } from '../engine/broker';
 import { money, pct, signedMoney } from '../lib/format';
 import { BrandMark, Icon } from './Icon';
+import { LOGIN_HASH, signOut } from '../login';
 import { ConfirmDialog } from './ConfirmDialog';
 
 export function TopBar() {
@@ -73,6 +74,11 @@ export function TopBar() {
         <button className="btn btn-icon btn-ghost" onClick={() => setConfirmReset(true)} title="Start over" aria-label="Start over with a new paper test">
           <Icon name="reset" />
         </button>
+        {LOGIN_HASH && (
+          <button className="btn btn-sm btn-ghost" onClick={signOut} title="Sign out of this browser">
+            Sign out
+          </button>
+        )}
       </div>
 
       <ConfirmDialog
